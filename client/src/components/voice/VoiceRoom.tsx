@@ -6,6 +6,22 @@ import { useScreenShare } from "../../hooks/useScreenShare";
 import { useVoice } from "../../hooks/useVoice";
 import Button from "../ui/Button";
 import { useRoomsStore } from "../../store/rooms";
+import { useEffect, useRef } from "react";
+
+const RemoteAudio = ({ stream }: { stream: MediaStream }): JSX.Element => {
+  const ref = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (!ref.current) {
+      return;
+    }
+    if (ref.current.srcObject !== stream) {
+      ref.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  return <audio ref={ref} autoPlay playsInline />;
+};
 
 const VoiceRoom = (): JSX.Element => {
   const rooms = useRoomsStore((state) => state.rooms);
@@ -14,6 +30,8 @@ const VoiceRoom = (): JSX.Element => {
 
   const participants = useVoiceStore((state) => state.participants);
   const setParticipantVolume = useVoiceStore((state) => state.setParticipantVolume);
+  const remoteStreams = useVoiceStore((state) => state.remoteStreams);
+  const selfSocketId = useVoiceStore((state) => state.selfSocketId);
   const { stream } = useScreenShare();
   const { roomId, isConnected, error, joinVoiceRoom, leaveVoiceRoom } = useVoice();
 
@@ -61,9 +79,17 @@ const VoiceRoom = (): JSX.Element => {
           ))
         )}
       </div>
+      <div className="hidden">
+        {participants
+          .filter((participant) => participant.id !== selfSocketId)
+          .map((participant) =>
+            remoteStreams[participant.id] ? (
+              <RemoteAudio key={participant.id} stream={remoteStreams[participant.id]} />
+            ) : null
+          )}
+      </div>
     </section>
   );
 };
 
 export default VoiceRoom;
-

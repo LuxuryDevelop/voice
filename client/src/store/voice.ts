@@ -1,7 +1,8 @@
 import { create } from "zustand";
 
 export type Participant = {
-  id: string;
+  id: string; // socketId
+  userId: string;
   username: string;
   avatarUrl?: string | null;
   isMuted: boolean;
@@ -19,6 +20,8 @@ type VoiceState = {
   isVideoEnabled: boolean;
   isPushToTalk: boolean;
   localStream: MediaStream | null;
+  remoteStreams: Record<string, MediaStream>;
+  selfSocketId: string | null;
   error: string | null;
   participants: Participant[];
   setRoomId: (roomId: string | null) => void;
@@ -27,6 +30,8 @@ type VoiceState = {
   setVideoEnabled: (enabled: boolean) => void;
   setPushToTalk: (enabled: boolean) => void;
   setLocalStream: (stream: MediaStream | null) => void;
+  setRemoteStream: (participantId: string, stream: MediaStream | null) => void;
+  setSelfSocketId: (socketId: string | null) => void;
   setError: (error: string | null) => void;
   setParticipants: (participants: Participant[]) => void;
   setParticipantVolume: (participantId: string, volume: number) => void;
@@ -42,6 +47,8 @@ export const useVoiceStore = create<VoiceState>((set) => ({
   isVideoEnabled: false,
   isPushToTalk: false,
   localStream: null,
+  remoteStreams: {},
+  selfSocketId: null,
   error: null,
   participants: [],
   setRoomId: (roomId) => set({ roomId, callStartedAt: roomId ? Date.now() : null }),
@@ -50,6 +57,21 @@ export const useVoiceStore = create<VoiceState>((set) => ({
   setVideoEnabled: (isVideoEnabled) => set({ isVideoEnabled }),
   setPushToTalk: (isPushToTalk) => set({ isPushToTalk }),
   setLocalStream: (localStream) => set({ localStream }),
+  setRemoteStream: (participantId, stream) =>
+    set((state) => {
+      if (!stream) {
+        const next = { ...state.remoteStreams };
+        delete next[participantId];
+        return { remoteStreams: next };
+      }
+      return {
+        remoteStreams: {
+          ...state.remoteStreams,
+          [participantId]: stream
+        }
+      };
+    }),
+  setSelfSocketId: (selfSocketId) => set({ selfSocketId }),
   setError: (error) => set({ error }),
   setParticipants: (participants) => set({ participants }),
   setParticipantVolume: (participantId, volume) =>
@@ -73,6 +95,8 @@ export const useVoiceStore = create<VoiceState>((set) => ({
       isVideoEnabled: false,
       isPushToTalk: false,
       localStream: null,
+      remoteStreams: {},
+      selfSocketId: null,
       error: null,
       participants: []
     })

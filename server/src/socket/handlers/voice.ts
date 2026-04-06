@@ -81,6 +81,27 @@ export const registerVoiceHandlers = (io: Server, socket: Socket): void => {
     emitParticipants(io, roomId);
   });
 
+  socket.on("voice:webrtc-offer", (payload: { to: string; sdp: Record<string, unknown> }) => {
+    io.to(payload.to).emit("voice:webrtc-offer", {
+      from: socket.id,
+      sdp: payload.sdp
+    });
+  });
+
+  socket.on("voice:webrtc-answer", (payload: { to: string; sdp: Record<string, unknown> }) => {
+    io.to(payload.to).emit("voice:webrtc-answer", {
+      from: socket.id,
+      sdp: payload.sdp
+    });
+  });
+
+  socket.on("voice:webrtc-ice", (payload: { to: string; candidate: Record<string, unknown> }) => {
+    io.to(payload.to).emit("voice:webrtc-ice", {
+      from: socket.id,
+      candidate: payload.candidate
+    });
+  });
+
   socket.on("voice:leave", (_payload?: { roomId?: string }) => {
     removeSocketFromRoom(io, socket);
   });

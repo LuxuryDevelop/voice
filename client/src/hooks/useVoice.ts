@@ -12,6 +12,15 @@ type VoiceServerParticipant = {
   speaking: boolean;
 };
 
+const peerConnections = new Map<string, RTCPeerConnection>();
+const pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
+let engineInitialized = false;
+
+const iceServers: RTCIceServer[] = [
+  { urls: "stun:stun.cloudflare.com:3478" },
+  { urls: "stun:stun.l.google.com:19302" }
+];
+
 const createAudioStream = async (): Promise<MediaStream> => {
   return navigator.mediaDevices.getUserMedia({
     audio: {
@@ -21,6 +30,16 @@ const createAudioStream = async (): Promise<MediaStream> => {
     },
     video: false
   });
+};
+
+const closePeer = (remoteSocketId: string, setRemoteStream: (participantId: string, stream: MediaStream | null) => void): void => {
+  const peer = peerConnections.get(remoteSocketId);
+  if (peer) {
+    peer.close();
+    peerConnections.delete(remoteSocketId);
+  }
+  pendingCandidates.delete(remoteSocketId);
+  setRemoteStream(remoteSocketId, null);
 };
 
 export const useVoice = () => {
@@ -34,6 +53,7 @@ export const useVoice = () => {
     isConnected,
     localStream,
     error,
+    participants,
     setRoomId,
     setMuted,
     setVideoEnabled,
@@ -41,6 +61,8 @@ export const useVoice = () => {
     setConnected,
     setParticipants,
     setLocalStream,
+    setRemoteStream,
+    setSelfSocketId,
     setParticipantSpeaking,
     setError
   } = useVoiceStore();
@@ -56,11 +78,94 @@ export const useVoice = () => {
     [isMuted, isVideoEnabled, socket]
   );
 
+  const flushPendingCandidates = useCallback(async (remoteSocketId: string) => {
+    const peer = peerConnections.get(remoteSocketId);
+    const queue = pendingCandidates.get(remoteSocketId);
+    if (!peer || !queue || queue.length === 0) {
+      return;
+    }
+    for (const candidate of queue) {
+      try {
+        await peer.addIceCandidate(candidate);
+      } catch {
+        // Ignore malformed/out-of-order candidate.
+      }
+    }
+    pendingCandidates.delete(remoteSocketId);
+  }, []);
+
+  const createPeerConnection = useCallback(
+    async (remoteSocketId: string, shouldInitiate: boolean) => {
+      const existing = peerConnections.get(remoteSocketId);
+      if (existing) {
+        return existing;
+      }
+
+      const peer = new RTCPeerConnection({ iceServers });
+      peerConnections.set(remoteSocketId, peer);
+
+      const stream = useVoiceStore.getState().localStream;
+      stream?.getTracks().forEach((track) => {
+        peer.addTrack(track, stream);
+      });
+
+      peer.onicecandidate = (event) => {
+        if (!event.candidate) {
+          return;
+        }
+        socket.emit("voice:webrtc-ice", {
+          to: remoteSocketId,
+          candidate: event.candidate.toJSON()
+        });
+      };
+
+      peer.ontrack = (event) => {
+        const [remoteStream] = event.streams;
+        if (remoteStream) {
+          setRemoteStream(remoteSocketId, remoteStream);
+        }
+      };
+
+      peer.onconnectionstatechange = () => {
+        if (["closed", "failed", "disconnected"].includes(peer.connectionState)) {
+          closePeer(remoteSocketId, setRemoteStream);
+        }
+      };
+
+      if (shouldInitiate) {
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        socket.emit("voice:webrtc-offer", {
+          to: remoteSocketId,
+          sdp: offer
+        });
+      }
+
+      await flushPendingCandidates(remoteSocketId);
+      return peer;
+    },
+    [flushPendingCandidates, setRemoteStream, socket]
+  );
+
   useEffect(() => {
-    const onParticipants = (payload: { roomId: string; participants: VoiceServerParticipant[] }) => {
+    if (engineInitialized) {
+      return;
+    }
+    engineInitialized = true;
+
+    const onConnect = () => {
+      setSelfSocketId(socket.id);
+    };
+    if (socket.connected) {
+      setSelfSocketId(socket.id);
+    }
+    socket.on("connect", onConnect);
+
+    const onParticipants = async (payload: { roomId: string; participants: VoiceServerParticipant[] }) => {
       setParticipants(
         payload.participants.map((participant) => ({
-          id: participant.userId,
+          id: participant.socketId,
+          userId: participant.userId,
           username: participant.username,
           isMuted: participant.isMuted,
           isVideoEnabled: participant.isVideoEnabled,
@@ -69,13 +174,70 @@ export const useVoice = () => {
           speaking: participant.speaking
         }))
       );
+
+      const selfSocketId = socket.id;
+      const peersInRoom = payload.participants.map((participant) => participant.socketId);
+      for (const remoteSocketId of peersInRoom) {
+        if (remoteSocketId === selfSocketId) {
+          continue;
+        }
+        if (!peerConnections.has(remoteSocketId)) {
+          // Deterministic initiator to avoid glare.
+          const shouldInitiate = selfSocketId > remoteSocketId;
+          await createPeerConnection(remoteSocketId, shouldInitiate);
+        }
+      }
+
+      for (const existingSocketId of [...peerConnections.keys()]) {
+        if (!peersInRoom.includes(existingSocketId)) {
+          closePeer(existingSocketId, setRemoteStream);
+        }
+      }
+    };
+
+    const onOffer = async (payload: { from: string; sdp: RTCSessionDescriptionInit }) => {
+      const peer = await createPeerConnection(payload.from, false);
+      await peer.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      socket.emit("voice:webrtc-answer", {
+        to: payload.from,
+        sdp: answer
+      });
+      await flushPendingCandidates(payload.from);
+    };
+
+    const onAnswer = async (payload: { from: string; sdp: RTCSessionDescriptionInit }) => {
+      const peer = peerConnections.get(payload.from);
+      if (!peer) {
+        return;
+      }
+      await peer.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      await flushPendingCandidates(payload.from);
+    };
+
+    const onIce = async (payload: { from: string; candidate: RTCIceCandidateInit }) => {
+      const peer = peerConnections.get(payload.from);
+      if (!peer) {
+        const queue = pendingCandidates.get(payload.from) ?? [];
+        queue.push(payload.candidate);
+        pendingCandidates.set(payload.from, queue);
+        return;
+      }
+      try {
+        await peer.addIceCandidate(payload.candidate);
+      } catch {
+        const queue = pendingCandidates.get(payload.from) ?? [];
+        queue.push(payload.candidate);
+        pendingCandidates.set(payload.from, queue);
+      }
     };
 
     socket.on("voice:participants", onParticipants);
-    return () => {
-      socket.off("voice:participants", onParticipants);
-    };
-  }, [setParticipants, socket]);
+    socket.on("voice:webrtc-offer", onOffer);
+    socket.on("voice:webrtc-answer", onAnswer);
+    socket.on("voice:webrtc-ice", onIce);
+  }, [createPeerConnection, flushPendingCandidates, setParticipants, setRemoteStream, setSelfSocketId, socket]);
 
   useEffect(() => {
     if (!localStream || !roomId) {
@@ -95,7 +257,10 @@ export const useVoice = () => {
       const avg = data.reduce((sum, value) => sum + value, 0) / data.length / 255;
       const speaking = avg > 0.05 && !isMuted;
       if (user?.id) {
-        setParticipantSpeaking(user.id, speaking);
+        const selfSocketId = useVoiceStore.getState().selfSocketId;
+        if (selfSocketId) {
+          setParticipantSpeaking(selfSocketId, speaking);
+        }
       }
       emitVoiceState({ speaking });
       raf = requestAnimationFrame(tick);
@@ -113,11 +278,12 @@ export const useVoice = () => {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === "m") {
-        setMuted(!isMuted);
+        const nextMuted = !useVoiceStore.getState().isMuted;
+        setMuted(nextMuted);
         localStream?.getAudioTracks().forEach((track) => {
-          track.enabled = isMuted;
+          track.enabled = !nextMuted;
         });
-        emitVoiceState({ muted: !isMuted });
+        emitVoiceState({ muted: nextMuted });
       }
 
       if (isPushToTalk && event.code === "Space") {
@@ -145,13 +311,20 @@ export const useVoice = () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [emitVoiceState, isMuted, isPushToTalk, localStream, setMuted]);
+  }, [emitVoiceState, isPushToTalk, localStream, setMuted]);
 
   const joinVoiceRoom = useCallback(
     async (nextRoomId: string) => {
       try {
+        if (useVoiceStore.getState().roomId === nextRoomId && useVoiceStore.getState().isConnected) {
+          return;
+        }
         setError(null);
-        let stream = localStream;
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Microphone is unavailable in this context. Open app over HTTPS.");
+        }
+
+        let stream = useVoiceStore.getState().localStream;
         if (!stream) {
           stream = await createAudioStream();
           setLocalStream(stream);
@@ -173,12 +346,15 @@ export const useVoice = () => {
         setError(joinError instanceof Error ? joinError.message : "Cannot access microphone");
       }
     },
-    [emitVoiceState, localStream, setConnected, setError, setLocalStream, setMuted, setRoomId, socket, user?.id, user?.username]
+    [emitVoiceState, setConnected, setError, setLocalStream, setMuted, setRoomId, socket, user?.id, user?.username]
   );
 
   const leaveVoiceRoom = useCallback(() => {
     if (roomId) {
       socket.emit("voice:leave", { roomId });
+    }
+    for (const remoteSocketId of [...peerConnections.keys()]) {
+      closePeer(remoteSocketId, setRemoteStream);
     }
     localStream?.getTracks().forEach((track) => track.stop());
     setLocalStream(null);
@@ -186,7 +362,7 @@ export const useVoice = () => {
     setConnected(false);
     setMuted(false);
     setParticipants([]);
-  }, [localStream, roomId, setConnected, setLocalStream, setMuted, setParticipants, setRoomId, socket]);
+  }, [localStream, roomId, setConnected, setLocalStream, setMuted, setParticipants, setRemoteStream, setRoomId, socket]);
 
   const toggleMute = useCallback(() => {
     const nextMuted = !isMuted;
@@ -222,6 +398,7 @@ export const useVoice = () => {
     isPushToTalk,
     isConnected,
     error,
+    participants,
     joinVoiceRoom,
     leaveVoiceRoom,
     toggleMute,
@@ -229,4 +406,3 @@ export const useVoice = () => {
     togglePushToTalk
   };
 };
-
