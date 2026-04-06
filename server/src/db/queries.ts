@@ -322,3 +322,9 @@ export const listRoomsWithChannels = (): Array<{
       }))
   }));
 };
+
+export const deleteRoomById = (roomId: string): boolean => {
+  const db = getDb();
+  const result = db.prepare("DELETE FROM rooms WHERE id = ?").run(roomId);
+  return result.changes > 0;
+};

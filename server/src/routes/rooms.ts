@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { authGuard, type AuthPayload } from "../middleware/auth.js";
-import { createRoomWithDefaultChannels, listRoomsWithChannels } from "../db/queries.js";
+import { authGuard, type AuthPayload, requireAdmin } from "../middleware/auth.js";
+import { createRoomWithDefaultChannels, deleteRoomById, listRoomsWithChannels } from "../db/queries.js";
 
 const createRoomSchema = z.object({
   name: z.string().trim().min(2).max(48)
@@ -48,7 +48,15 @@ const roomsRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(409).send({ error: "Room with this name already exists" });
     }
   });
+
+  app.delete("/:roomId", { preHandler: [authGuard, requireAdmin] }, async (request, reply) => {
+    const params = request.params as { roomId: string };
+    const deleted = deleteRoomById(params.roomId);
+    if (!deleted) {
+      return reply.code(404).send({ error: "Room not found" });
+    }
+    return { ok: true };
+  });
 };
 
 export default roomsRoutes;
-

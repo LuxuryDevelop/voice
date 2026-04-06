@@ -1,51 +1,69 @@
-import { useMemo } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useRef } from "react";
 import Message from "./Message";
+import { useRoomsStore } from "../../store/rooms";
+import { useChatStore, type ChatMessage } from "../../store/chat";
+import { useSocket } from "../../hooks/useSocket";
 
 const MessageList = (): JSX.Element => {
-  const messages = useMemo(
-    () =>
-      Array.from({ length: 30 }, (_, index) => ({
-        id: `msg-${index}`,
-        author: index % 2 === 0 ? "you" : "teammate",
-        content: index % 4 === 0 ? "**Luxury** ping in `#general`" : "Hello from the channel.",
-        createdAt: Date.now() - index * 1000 * 20
-      })),
-    []
-  );
+  const { socket } = useSocket();
+  const rooms = useRoomsStore((state) => state.rooms);
+  const activeChannelId = useRoomsStore((state) => state.activeChannelId);
+  const activeChannel = rooms.flatMap((room) => room.channels).find((channel) => channel.id === activeChannelId);
+  const messages = useChatStore((state) => (activeChannelId ? state.messagesByChannel[activeChannelId] ?? [] : []));
+  const setHistory = useChatStore((state) => state.setHistory);
+  const addMessage = useChatStore((state) => state.addMessage);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  const rowVirtualizer = useVirtualizer({
-    count: messages.length,
-    getScrollElement: () => document.getElementById("messages-scroll"),
-    estimateSize: () => 92,
-    overscan: 8
-  });
+  useEffect(() => {
+    if (!activeChannelId || activeChannel?.type !== "text") {
+      return;
+    }
+    socket.emit("chat:join-channel", activeChannelId);
+    return () => {
+      socket.emit("chat:leave-channel", activeChannelId);
+    };
+  }, [activeChannel?.type, activeChannelId, socket]);
+
+  useEffect(() => {
+    const onHistory = (payload: { channelId: string; messages: ChatMessage[] }) => {
+      setHistory(payload.channelId, payload.messages);
+    };
+    const onNewMessage = (message: ChatMessage) => {
+      addMessage(message);
+    };
+
+    socket.on("chat:history", onHistory);
+    socket.on("chat:new-message", onNewMessage);
+    return () => {
+      socket.off("chat:history", onHistory);
+      socket.off("chat:new-message", onNewMessage);
+    };
+  }, [addMessage, setHistory, socket]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  if (!activeChannel || activeChannel.type !== "text") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-[#8A8D96]">
+        Select a text channel to open chat.
+      </div>
+    );
+  }
 
   return (
-    <div id="messages-scroll" className="min-h-0 flex-1 overflow-auto px-3 py-2">
-      <div
-        style={{
-          height: `${rowVirtualizer.getTotalSize()}px`,
-          position: "relative"
-        }}
-      >
-        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-          const message = messages[virtualRow.index];
-          return (
-            <div
-              key={message.id}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualRow.start}px)`
-              }}
-            >
-              <Message author={message.author} content={message.content} createdAt={message.createdAt} />
-            </div>
-          );
-        })}
+    <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+      <div className="space-y-2">
+        {messages.map((message) => (
+          <Message key={message.id} author={message.author} content={message.content} createdAt={message.createdAt} />
+        ))}
+        {messages.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-white/15 p-4 text-center text-sm text-[#8A8D96]">
+            No messages yet. Write first message below.
+          </div>
+        ) : null}
+        <div ref={bottomRef} />
       </div>
     </div>
   );

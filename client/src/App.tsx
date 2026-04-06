@@ -5,7 +5,9 @@ import AppPage from "./pages/App";
 import { useAuthStore } from "./store/auth";
 
 const App = (): JSX.Element => {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const user = useAuthStore((state) => state.user);
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const isAuthenticated = Boolean(user && accessToken);
 
   return (
     <Routes>
@@ -18,4 +20,3 @@ const App = (): JSX.Element => {
 };
 
 export default App;
-

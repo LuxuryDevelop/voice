@@ -7,7 +7,6 @@ export const registerSocketServer = (io: Server): void => {
   io.on("connection", (socket) => {
     registerChatHandlers(io, socket);
     registerPresenceHandlers(io, socket);
-    registerVoiceHandlers(socket);
+    registerVoiceHandlers(io, socket);
   });
 };
-

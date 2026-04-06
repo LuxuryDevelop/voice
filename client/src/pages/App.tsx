@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import Sidebar from "../components/layout/Sidebar";
 import MainContent from "../components/layout/MainContent";
 import StatusBar from "../components/layout/StatusBar";
-import { useRoomsStore, type Room } from "../store/rooms";
+import { useRoomsStore, type Channel, type Room } from "../store/rooms";
 import { useVoiceStore } from "../store/voice";
 import { useAuthStore } from "../store/auth";
 import { apiRequest } from "../lib/api";
 import Button from "../components/ui/Button";
+import { useVoice } from "../hooks/useVoice";
 
 type RoomsResponse = {
   rooms: Array<{
@@ -32,11 +33,14 @@ type UsersResponse = {
 const AppPage = (): JSX.Element => {
   const user = useAuthStore((state) => state.user);
   const clearSession = useAuthStore((state) => state.clearSession);
+  const rooms = useRoomsStore((state) => state.rooms);
   const setRooms = useRoomsStore((state) => state.setRooms);
   const addRoom = useRoomsStore((state) => state.addRoom);
+  const removeRoom = useRoomsStore((state) => state.removeRoom);
   const setActiveRoom = useRoomsStore((state) => state.setActiveRoom);
   const setActiveChannel = useRoomsStore((state) => state.setActiveChannel);
   const setParticipants = useVoiceStore((state) => state.setParticipants);
+  const { joinVoiceRoom, leaveVoiceRoom, roomId } = useVoice();
   const [users, setUsers] = useState<UsersResponse["users"]>([]);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,18 +75,8 @@ const AppPage = (): JSX.Element => {
   }, [user?.role]);
 
   useEffect(() => {
-    setParticipants([
-      {
-        id: "local",
-        username: user?.username ?? "You",
-        isMuted: false,
-        isVideoEnabled: false,
-        isScreenSharing: false,
-        volume: 100,
-        speaking: false
-      }
-    ]);
-  }, [setParticipants, user?.username]);
+    setParticipants([]);
+  }, [setParticipants]);
 
   useEffect(() => {
     void (async () => {
@@ -146,11 +140,51 @@ const AppPage = (): JSX.Element => {
     }
   };
 
+  const handleSelectChannel = (channel: Channel): void => {
+    setActiveRoom(channel.roomId);
+    setActiveChannel(channel.id);
+    if (channel.type === "voice") {
+      void joinVoiceRoom(channel.id);
+      return;
+    }
+    if (roomId) {
+      leaveVoiceRoom();
+    }
+  };
+
+  const deleteRoom = async (targetRoomId: string): Promise<void> => {
+    if (user?.role !== "admin") {
+      return;
+    }
+    const confirmed = confirm("Delete this room? Channels and messages in it will be removed.");
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await apiRequest(`/api/rooms/${targetRoomId}`, {
+        method: "DELETE"
+      });
+      const deletedRoom = rooms.find((item) => item.id === targetRoomId);
+      if (deletedRoom && roomId && deletedRoom.channels.some((channel) => channel.id === roomId)) {
+        leaveVoiceRoom();
+      }
+      removeRoom(targetRoomId);
+      await loadRooms();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Could not delete room");
+    }
+  };
+
   return (
     <div className="flex h-screen min-h-screen flex-col">
       {error ? <div className="bg-red-500/20 px-4 py-2 text-sm text-red-200">{error}</div> : null}
       <div className="flex min-h-0 flex-1">
-        <Sidebar onCreateRoom={() => void createRoom()} />
+        <Sidebar
+          onCreateRoom={() => void createRoom()}
+          onSelectChannel={handleSelectChannel}
+          onDeleteRoom={(roomIdToDelete) => void deleteRoom(roomIdToDelete)}
+          canManageRooms={user?.role === "admin"}
+        />
         <MainContent />
         {user?.role === "admin" ? (
           <aside className="glass hidden w-[320px] border-l border-white/10 p-3 xl:block">
@@ -194,4 +228,3 @@ const AppPage = (): JSX.Element => {
 };
 
 export default AppPage;
-

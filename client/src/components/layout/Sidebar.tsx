@@ -1,16 +1,18 @@
 import { motion } from "framer-motion";
-import { Hash, Volume2 } from "lucide-react";
-import { useRoomsStore } from "../../store/rooms";
+import { Hash, Trash2, Volume2 } from "lucide-react";
+import { type Channel, useRoomsStore } from "../../store/rooms";
 import Button from "../ui/Button";
 
 type SidebarProps = {
   onCreateRoom: () => void;
+  onSelectChannel: (channel: Channel) => void;
+  onDeleteRoom: (roomId: string) => void;
+  canManageRooms: boolean;
 };
 
-const Sidebar = ({ onCreateRoom }: SidebarProps): JSX.Element => {
+const Sidebar = ({ onCreateRoom, onSelectChannel, onDeleteRoom, canManageRooms }: SidebarProps): JSX.Element => {
   const rooms = useRoomsStore((state) => state.rooms);
   const setActiveRoom = useRoomsStore((state) => state.setActiveRoom);
-  const setActiveChannel = useRoomsStore((state) => state.setActiveChannel);
   const activeRoomId = useRoomsStore((state) => state.activeRoomId);
 
   return (
@@ -32,14 +34,29 @@ const Sidebar = ({ onCreateRoom }: SidebarProps): JSX.Element => {
             }`}
             onClick={() => setActiveRoom(room.id)}
           >
-            <p className="font-ui text-sm text-white">{room.name}</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-ui text-sm text-white">{room.name}</p>
+              {canManageRooms ? (
+                <button
+                  type="button"
+                  className="rounded-md p-1 text-[#8A8D96] transition hover:bg-red-500/15 hover:text-red-300"
+                  title="Delete room"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteRoom(room.id);
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              ) : null}
+            </div>
             <div className="mt-2 space-y-1">
               {room.channels.map((channel) => (
                 <button
                   type="button"
                   key={channel.id}
                   className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-xs text-[#8A8D96] hover:bg-white/5 hover:text-white"
-                  onClick={() => setActiveChannel(channel.id)}
+                  onClick={() => onSelectChannel(channel)}
                 >
                   {channel.type === "text" ? <Hash size={14} /> : <Volume2 size={14} />}
                   {channel.name}

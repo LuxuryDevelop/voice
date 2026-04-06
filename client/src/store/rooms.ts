@@ -19,6 +19,7 @@ type RoomsState = {
   activeChannelId: string | null;
   setRooms: (rooms: Room[]) => void;
   addRoom: (room: Room) => void;
+  removeRoom: (roomId: string) => void;
   setActiveRoom: (roomId: string | null) => void;
   setActiveChannel: (channelId: string | null) => void;
 };
@@ -32,6 +33,16 @@ export const useRoomsStore = create<RoomsState>((set) => ({
     set((state) => ({
       rooms: [...state.rooms, room]
     })),
+  removeRoom: (roomId) =>
+    set((state) => {
+      const removedRoom = state.rooms.find((room) => room.id === roomId);
+      const removedChannelIds = new Set((removedRoom?.channels ?? []).map((channel) => channel.id));
+      return {
+        rooms: state.rooms.filter((room) => room.id !== roomId),
+        activeRoomId: state.activeRoomId === roomId ? null : state.activeRoomId,
+        activeChannelId: removedChannelIds.has(state.activeChannelId ?? "") ? null : state.activeChannelId
+      };
+    }),
   setActiveRoom: (activeRoomId) => set({ activeRoomId }),
   setActiveChannel: (activeChannelId) => set({ activeChannelId })
 }));

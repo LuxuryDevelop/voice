@@ -5,7 +5,9 @@ import MessageInput from "../chat/MessageInput";
 import { useRoomsStore } from "../../store/rooms";
 
 const MainContent = (): JSX.Element => {
+  const rooms = useRoomsStore((state) => state.rooms);
   const activeChannelId = useRoomsStore((state) => state.activeChannelId);
+  const activeChannel = rooms.flatMap((room) => room.channels).find((channel) => channel.id === activeChannelId);
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 p-3">
@@ -17,9 +19,14 @@ const MainContent = (): JSX.Element => {
           exit={{ opacity: 0, y: -8 }}
           className="glass flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/10"
         >
-          <VoiceRoom />
-          <MessageList />
-          <MessageInput />
+          {activeChannel?.type === "voice" ? (
+            <VoiceRoom />
+          ) : (
+            <>
+              <MessageList />
+              <MessageInput />
+            </>
+          )}
         </motion.section>
       </AnimatePresence>
     </main>
@@ -27,4 +34,3 @@ const MainContent = (): JSX.Element => {
 };
 
 export default MainContent;
-
