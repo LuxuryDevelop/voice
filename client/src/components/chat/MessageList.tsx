@@ -1,18 +1,24 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Message from "./Message";
 import { useRoomsStore } from "../../store/rooms";
 import { useChatStore, type ChatMessage } from "../../store/chat";
 import { useSocket } from "../../hooks/useSocket";
+
+const EMPTY_MESSAGES: ChatMessage[] = [];
 
 const MessageList = (): JSX.Element => {
   const { socket } = useSocket();
   const rooms = useRoomsStore((state) => state.rooms);
   const activeChannelId = useRoomsStore((state) => state.activeChannelId);
   const activeChannel = rooms.flatMap((room) => room.channels).find((channel) => channel.id === activeChannelId);
-  const messages = useChatStore((state) => (activeChannelId ? state.messagesByChannel[activeChannelId] ?? [] : []));
+  const messagesByChannel = useChatStore((state) => state.messagesByChannel);
   const setHistory = useChatStore((state) => state.setHistory);
   const addMessage = useChatStore((state) => state.addMessage);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messages = useMemo(
+    () => (activeChannelId ? messagesByChannel[activeChannelId] ?? EMPTY_MESSAGES : EMPTY_MESSAGES),
+    [activeChannelId, messagesByChannel]
+  );
 
   useEffect(() => {
     if (!activeChannelId || activeChannel?.type !== "text") {
@@ -70,4 +76,3 @@ const MessageList = (): JSX.Element => {
 };
 
 export default MessageList;
-
