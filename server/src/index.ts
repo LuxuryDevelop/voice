@@ -10,14 +10,16 @@ import roomsRoutes from "./routes/rooms.js";
 import messagesRoutes from "./routes/messages.js";
 import usersRoutes from "./routes/users.js";
 import { registerSocketServer } from "./socket/index.js";
+import { bootstrapData } from "./bootstrap.js";
 
 const start = async (): Promise<void> => {
   const app = Fastify({ logger: true });
   getDb();
+  await bootstrapData();
 
   await app.register(cors, {
     origin: config.CORS_ORIGIN,
-    credentials: true
+    credentials: config.CORS_ORIGIN !== "*"
   });
   await app.register(jwt, { secret: config.JWT_ACCESS_SECRET });
   await app.register(multipart, {
@@ -38,7 +40,7 @@ const start = async (): Promise<void> => {
   const io = new SocketIOServer(app.server, {
     cors: {
       origin: config.CORS_ORIGIN,
-      credentials: true
+      credentials: config.CORS_ORIGIN !== "*"
     },
     path: "/socket.io"
   });
@@ -60,4 +62,3 @@ start().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

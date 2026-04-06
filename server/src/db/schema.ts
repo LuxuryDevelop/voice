@@ -5,6 +5,19 @@ import { config } from "../config.js";
 
 let dbInstance: Database.Database | null = null;
 
+const ensureColumn = (
+  db: Database.Database,
+  table: string,
+  column: string,
+  columnDefinition: string
+): void => {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.some((item) => item.name === column)) {
+    return;
+  }
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${columnDefinition}`);
+};
+
 export const getDb = (): Database.Database => {
   if (dbInstance) {
     return dbInstance;
@@ -22,17 +35,19 @@ export const getDb = (): Database.Database => {
       password_hash TEXT NOT NULL,
       avatar_url TEXT,
       status TEXT NOT NULL DEFAULT 'offline',
+      role TEXT NOT NULL DEFAULT 'user',
+      is_banned INTEGER NOT NULL DEFAULT 0,
+      banned_reason TEXT,
       created_at INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS invites (
       code TEXT PRIMARY KEY,
-      created_by TEXT NOT NULL,
+      created_by TEXT,
       max_uses INTEGER NOT NULL DEFAULT 1,
       uses INTEGER NOT NULL DEFAULT 0,
       expires_at INTEGER,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+      created_at INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS rooms (
@@ -74,6 +89,8 @@ export const getDb = (): Database.Database => {
       created_at INTEGER NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+    CREATE INDEX IF NOT EXISTS idx_refresh_token_user_id ON refresh_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS idx_refresh_token_expires_at ON refresh_tokens(expires_at);
 
     CREATE TABLE IF NOT EXISTS dm_threads (
       id TEXT PRIMARY KEY,
@@ -114,6 +131,10 @@ export const getDb = (): Database.Database => {
     );
   `);
 
+  ensureColumn(dbInstance, "users", "role", "TEXT NOT NULL DEFAULT 'user'");
+  ensureColumn(dbInstance, "users", "is_banned", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(dbInstance, "users", "banned_reason", "TEXT");
+
   return dbInstance;
 };
 
@@ -123,4 +144,3 @@ export const closeDb = (): void => {
     dbInstance = null;
   }
 };
-

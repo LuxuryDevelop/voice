@@ -1,22 +1,35 @@
 import { motion } from "framer-motion";
 import { Hash, Volume2 } from "lucide-react";
 import { useRoomsStore } from "../../store/rooms";
+import Button from "../ui/Button";
 
-const Sidebar = (): JSX.Element => {
+type SidebarProps = {
+  onCreateRoom: () => void;
+};
+
+const Sidebar = ({ onCreateRoom }: SidebarProps): JSX.Element => {
   const rooms = useRoomsStore((state) => state.rooms);
   const setActiveRoom = useRoomsStore((state) => state.setActiveRoom);
   const setActiveChannel = useRoomsStore((state) => state.setActiveChannel);
+  const activeRoomId = useRoomsStore((state) => state.activeRoomId);
 
   return (
     <aside className="glass w-full max-w-[320px] border-r border-white/10 p-4">
-      <h2 className="mb-4 font-ui text-sm uppercase tracking-[0.2em] text-[#C9A84C]">LuxuryVoice</h2>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h2 className="font-ui text-sm uppercase tracking-[0.2em] text-[#C9A84C]">LuxuryVoice</h2>
+        <Button variant="ghost" className="px-2 py-1 text-xs" onClick={onCreateRoom}>
+          + Room
+        </Button>
+      </div>
       <div className="space-y-3">
         {rooms.map((room) => (
           <motion.div
             key={room.id}
             layout
             whileHover={{ scale: 1.01 }}
-            className="glass rounded-xl border border-white/10 p-3"
+            className={`glass rounded-xl border p-3 ${
+              activeRoomId === room.id ? "border-[#C9A84C]/70" : "border-white/10"
+            }`}
             onClick={() => setActiveRoom(room.id)}
           >
             <p className="font-ui text-sm text-white">{room.name}</p>
@@ -41,4 +54,3 @@ const Sidebar = (): JSX.Element => {
 };
 
 export default Sidebar;
-

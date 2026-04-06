@@ -1,4 +1,5 @@
 import { Server, Socket } from "socket.io";
+import { randomUUID } from "node:crypto";
 
 export const registerChatHandlers = (io: Server, socket: Socket): void => {
   socket.on("chat:join-channel", (channelId: string) => {
@@ -11,11 +12,10 @@ export const registerChatHandlers = (io: Server, socket: Socket): void => {
 
   socket.on("chat:send", (payload: { channelId: string; content: string }) => {
     io.to(`channel:${payload.channelId}`).emit("chat:new-message", {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       channelId: payload.channelId,
       content: payload.content,
       createdAt: Date.now()
     });
   });
 };
-

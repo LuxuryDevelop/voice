@@ -2,12 +2,49 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../components/ui/Button";
 import { useAuthStore } from "../store/auth";
+import { apiRequest } from "../lib/api";
+
+type AuthResponse = {
+  user: {
+    id: string;
+    username: string;
+    avatarUrl?: string | null;
+    status: "online" | "away" | "dnd" | "offline";
+    role: "admin" | "user";
+  };
+  accessToken: string;
+  refreshToken: string;
+};
 
 const LoginPage = (): JSX.Element => {
   const navigate = useNavigate();
   const setSession = useAuthStore((state) => state.setSession);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const onSubmit = async (): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await apiRequest<AuthResponse>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+        accessToken: null
+      });
+      setSession({
+        accessToken: response.accessToken,
+        refreshToken: response.refreshToken,
+        user: response.user
+      });
+      navigate("/app");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -27,23 +64,9 @@ const LoginPage = (): JSX.Element => {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
-          <Button
-            className="w-full"
-            type="button"
-            onClick={() => {
-              setSession({
-                accessToken: "dev-access-token",
-                refreshToken: "dev-refresh-token",
-                user: {
-                  id: "dev-user",
-                  username: username || "guest",
-                  status: "online"
-                }
-              });
-              navigate("/app");
-            }}
-          >
-            Enter
+          {error ? <p className="text-sm text-red-400">{error}</p> : null}
+          <Button className="w-full" type="button" disabled={loading} onClick={() => void onSubmit()}>
+            {loading ? "Signing in..." : "Enter"}
           </Button>
         </div>
         <button

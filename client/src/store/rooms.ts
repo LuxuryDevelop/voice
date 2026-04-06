@@ -18,6 +18,7 @@ type RoomsState = {
   activeRoomId: string | null;
   activeChannelId: string | null;
   setRooms: (rooms: Room[]) => void;
+  addRoom: (room: Room) => void;
   setActiveRoom: (roomId: string | null) => void;
   setActiveChannel: (channelId: string | null) => void;
 };
@@ -27,7 +28,10 @@ export const useRoomsStore = create<RoomsState>((set) => ({
   activeRoomId: null,
   activeChannelId: null,
   setRooms: (rooms) => set({ rooms }),
+  addRoom: (room) =>
+    set((state) => ({
+      rooms: [...state.rooms, room]
+    })),
   setActiveRoom: (activeRoomId) => set({ activeRoomId }),
   setActiveChannel: (activeChannelId) => set({ activeChannelId })
 }));
-

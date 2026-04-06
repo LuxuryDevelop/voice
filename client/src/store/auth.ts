@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export type UserStatus = "online" | "away" | "dnd" | "offline";
 
@@ -7,6 +8,7 @@ export type AuthUser = {
   username: string;
   avatarUrl?: string | null;
   status: UserStatus;
+  role: "admin" | "user";
 };
 
 type AuthState = {
@@ -19,28 +21,34 @@ type AuthState = {
   setStatus: (status: UserStatus) => void;
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
-  accessToken: null,
-  refreshToken: null,
-  user: null,
-  isAuthenticated: false,
-  setSession: ({ accessToken, refreshToken, user }) =>
-    set({
-      accessToken,
-      refreshToken,
-      user,
-      isAuthenticated: true
-    }),
-  clearSession: () =>
-    set({
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
       accessToken: null,
       refreshToken: null,
       user: null,
-      isAuthenticated: false
+      isAuthenticated: false,
+      setSession: ({ accessToken, refreshToken, user }) =>
+        set({
+          accessToken,
+          refreshToken,
+          user,
+          isAuthenticated: true
+        }),
+      clearSession: () =>
+        set({
+          accessToken: null,
+          refreshToken: null,
+          user: null,
+          isAuthenticated: false
+        }),
+      setStatus: (status) =>
+        set((state) => ({
+          user: state.user ? { ...state.user, status } : null
+        }))
     }),
-  setStatus: (status) =>
-    set((state) => ({
-      user: state.user ? { ...state.user, status } : null
-    }))
-}));
-
+    {
+      name: "luxuryvoice-auth"
+    }
+  )
+);

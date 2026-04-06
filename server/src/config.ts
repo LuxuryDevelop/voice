@@ -21,7 +21,10 @@ const envSchema = z.object({
   MEDIASOUP_LISTEN_IP: z.string().default("0.0.0.0"),
   MEDIASOUP_ANNOUNCED_IP: z.string().optional(),
   MEDIASOUP_MIN_PORT: z.coerce.number().int().positive().default(40000),
-  MEDIASOUP_MAX_PORT: z.coerce.number().int().positive().default(49999)
+  MEDIASOUP_MAX_PORT: z.coerce.number().int().positive().default(49999),
+  ADMIN_USERNAME: z.string().default("admin"),
+  ADMIN_PASSWORD: z.string().min(8).default("admin12345!"),
+  BOOTSTRAP_INVITE_CODE: z.string().default("LUXURY-INVITE")
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -34,4 +37,3 @@ if (!parsed.success) {
 }
 
 export const config = parsed.data;
-
